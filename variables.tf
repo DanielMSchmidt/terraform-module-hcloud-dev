@@ -45,6 +45,35 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/id_rsa.pub"
 }
 
+variable "ssh_private_key_path" {
+  description = "Path to local SSH private key for generated SSH config output. If null, the module infers it from ssh_public_key_path when possible."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.ssh_private_key_path == null || trimspace(var.ssh_private_key_path) != ""
+    error_message = "ssh_private_key_path cannot be empty when provided."
+  }
+}
+
+variable "ssh_host_alias" {
+  description = "Host alias used in generated SSH config output."
+  type        = string
+  default     = "dev"
+
+  validation {
+    condition     = can(regex("^\\S+$", var.ssh_host_alias))
+    error_message = "ssh_host_alias must not contain whitespace."
+  }
+}
+
+variable "ssh_forward_agent" {
+  description = "Whether to enable SSH agent forwarding in generated SSH config output."
+  type        = bool
+  default     = true
+}
+
 variable "dev_username" {
   description = "Non-root Linux user for development."
   type        = string

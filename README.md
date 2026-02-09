@@ -53,6 +53,7 @@ module "go_dev" {
   server_type         = "cpx42"
   image               = "ubuntu-24.04"
   ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+  ssh_host_alias      = "dev"
 
   dev_username = "dev"
   go_version   = "1.24.0"
@@ -67,6 +68,26 @@ module "go_dev" {
 }
 ```
 
+## SSH Alias (`ssh dev`)
+
+Use the generated SSH config output:
+
+```bash
+mkdir -p ~/.ssh/config.d
+touch ~/.ssh/config
+grep -q '^Include ~/.ssh/config.d/\*$' ~/.ssh/config || echo 'Include ~/.ssh/config.d/*' >> ~/.ssh/config
+terraform output -raw ssh_config_entry > ~/.ssh/config.d/go-dev.conf
+ssh dev
+```
+
+To clone private repositories from the remote host without copying private keys:
+
+```bash
+ssh-add ~/.ssh/id_ed25519
+ssh -A dev
+ssh -T git@github.com
+```
+
 ## Inputs
 
 | Name | Description | Type | Default | Required |
@@ -77,6 +98,9 @@ module "go_dev" {
 | `image` | Server image. | `string` | `"ubuntu-24.04"` | no |
 | `ssh_public_key` | SSH public key content; takes precedence over `ssh_public_key_path` if set. | `string` | `null` | no |
 | `ssh_public_key_path` | Path to local SSH public key used when `ssh_public_key` is null. | `string` | `"~/.ssh/id_ed25519.pub"` | no |
+| `ssh_private_key_path` | Path to private key used in generated SSH config output. If null, inferred from `ssh_public_key_path` when possible. | `string` | `null` | no |
+| `ssh_host_alias` | Host alias used in generated SSH config output. | `string` | `"dev"` | no |
+| `ssh_forward_agent` | Whether generated SSH config includes `ForwardAgent yes`. | `bool` | `true` | no |
 | `dev_username` | Non-root Linux user for development. | `string` | `"dev"` | no |
 | `go_version` | Go version installed from `go.dev`. | `string` | `"1.24.0"` | no |
 | `enable_firewall` | Whether to create and attach a firewall for the server. | `bool` | `true` | no |
@@ -93,6 +117,8 @@ module "go_dev" {
 | `ipv6_address` | Public IPv6 network assigned to the server. |
 | `ssh_user` | Username for SSH access. |
 | `ssh_command` | Ready-to-use SSH command. |
+| `ssh_host_alias` | Host alias for SSH config usage. |
+| `ssh_config_entry` | SSH config block to write to `~/.ssh/config` or an include file. |
 | `firewall_id` | Firewall ID when enabled, otherwise `null`. |
 
 ## Security notes / best practices

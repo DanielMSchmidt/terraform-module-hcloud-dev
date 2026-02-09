@@ -28,6 +28,23 @@ output "ssh_command" {
   value       = "ssh ${var.dev_username}@${hcloud_server.this.ipv4_address}"
 }
 
+output "ssh_host_alias" {
+  description = "Host alias intended for SSH config (for example: ssh dev)."
+  value       = local.ssh_host_alias_resolved
+}
+
+output "ssh_config_entry" {
+  description = "SSH config entry for ~/.ssh/config."
+  value = join("\n", compact([
+    "Host ${local.ssh_host_alias_resolved}",
+    "  HostName ${hcloud_server.this.ipv4_address}",
+    "  User ${var.dev_username}",
+    local.ssh_private_key_path_resolved != null ? "  IdentityFile ${local.ssh_private_key_path_resolved}" : null,
+    "  IdentitiesOnly yes",
+    var.ssh_forward_agent ? "  ForwardAgent yes" : null,
+  ]))
+}
+
 output "firewall_id" {
   description = "Firewall ID when enable_firewall is true; otherwise null."
   value       = var.enable_firewall ? hcloud_firewall.this[0].id : null

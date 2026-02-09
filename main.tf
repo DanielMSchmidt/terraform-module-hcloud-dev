@@ -1,5 +1,11 @@
 locals {
   ssh_public_key_resolved = trimspace(coalesce(var.ssh_public_key, file(pathexpand(var.ssh_public_key_path))))
+  ssh_host_alias_resolved = trimspace(var.ssh_host_alias)
+  ssh_private_key_path_resolved = var.ssh_private_key_path != null ? pathexpand(var.ssh_private_key_path) : (
+    var.ssh_public_key == null && endswith(pathexpand(var.ssh_public_key_path), ".pub")
+    ? trimsuffix(pathexpand(var.ssh_public_key_path), ".pub")
+    : null
+  )
 
   common_labels = merge({
     managed_by  = "terraform"
@@ -63,4 +69,16 @@ resource "hcloud_server" "this" {
   })
 
   firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
+}
+
+action "hcloud_server_poweron" "server" {
+    config {
+        server_id = hcloud_server.this.id
+    }
+}
+
+action "hcloud_server_poweroff" "server" {
+    config {
+        server_id = hcloud_server.this.id
+    }
 }
