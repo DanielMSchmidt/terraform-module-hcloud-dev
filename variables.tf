@@ -12,13 +12,13 @@ variable "name" {
 variable "location" {
   description = "Hetzner Cloud location (nbg1, fsn1, hel1, ash, hil)."
   type        = string
-  default     = "fsn1"
+  default     = "nbg1"
 }
 
 variable "server_type" {
   description = "Hetzner Cloud server type."
   type        = string
-  default     = "cx22"
+  default     = "cpx42"
 }
 
 variable "image" {

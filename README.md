@@ -50,7 +50,7 @@ module "go_dev" {
 
   name                = "go-dev"
   location            = "fsn1"
-  server_type         = "cx22"
+  server_type         = "cpx42"
   image               = "ubuntu-24.04"
   ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 
@@ -73,7 +73,7 @@ module "go_dev" {
 |------|-------------|------|---------|----------|
 | `name` | Name prefix for resources. | `string` | `"go-dev"` | no |
 | `location` | Hetzner Cloud location (`nbg1`, `fsn1`, `hel1`, `ash`, `hil`). | `string` | `"fsn1"` | no |
-| `server_type` | Hetzner Cloud server type. | `string` | `"cx22"` | no |
+| `server_type` | Hetzner Cloud server type. | `string` | `"cpx42"` | no |
 | `image` | Server image. | `string` | `"ubuntu-24.04"` | no |
 | `ssh_public_key` | SSH public key content; takes precedence over `ssh_public_key_path` if set. | `string` | `null` | no |
 | `ssh_public_key_path` | Path to local SSH public key used when `ssh_public_key` is null. | `string` | `"~/.ssh/id_ed25519.pub"` | no |

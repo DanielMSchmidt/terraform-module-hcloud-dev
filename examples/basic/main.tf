@@ -7,7 +7,7 @@ module "go_dev" {
 
   name                = "go-dev"
   location            = "fsn1"
-  server_type         = "cx22"
+  server_type         = "cpx42"
   image               = "ubuntu-24.04"
   ssh_public_key_path = var.ssh_public_key_path
 
