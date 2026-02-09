@@ -1,0 +1,49 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - git
+  - make
+  - gcc
+  - g++
+  - curl
+  - wget
+  - unzip
+  - tar
+  - jq
+  - vim
+  - tmux
+  - ripgrep
+  - direnv
+
+users:
+  - default
+  - name: ${dev_username}
+    gecos: Dev User
+    shell: /bin/bash
+    groups: [sudo]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${jsonencode(ssh_public_key)}
+
+write_files:
+  - path: /etc/profile.d/golang.sh
+    permissions: "0644"
+    owner: root:root
+    content: |
+      export GOROOT=/usr/local/go
+      export GOPATH=/home/${dev_username}/go
+      export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+
+runcmd:
+  - [bash, -lc, "set -euxo pipefail; curl -fsSL https://go.dev/dl/go${go_version}.linux-amd64.tar.gz -o /tmp/go.tar.gz"]
+  - [bash, -lc, "set -euxo pipefail; rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz"]
+  - [bash, -lc, "set -euxo pipefail; mkdir -p /home/${dev_username}/go/{bin,src,pkg}"]
+  - [bash, -lc, "set -euxo pipefail; chown -R ${dev_username}:${dev_username} /home/${dev_username}/go"]
+  - [bash, -lc, "set -euxo pipefail; sudo -u ${dev_username} env GOROOT=/usr/local/go GOPATH=/home/${dev_username}/go PATH=$PATH:/usr/local/go/bin:/home/${dev_username}/go/bin /usr/local/go/bin/go install golang.org/x/tools/gopls@latest"]
+  - [bash, -lc, "set -euxo pipefail; sudo -u ${dev_username} env GOROOT=/usr/local/go GOPATH=/home/${dev_username}/go PATH=$PATH:/usr/local/go/bin:/home/${dev_username}/go/bin /usr/local/go/bin/go install honnef.co/go/tools/cmd/staticcheck@latest"]
+  - [bash, -lc, "set -euxo pipefail; sudo -u ${dev_username} env GOROOT=/usr/local/go GOPATH=/home/${dev_username}/go PATH=$PATH:/usr/local/go/bin:/home/${dev_username}/go/bin /usr/local/go/bin/go install github.com/go-delve/delve/cmd/dlv@latest"]
+  - [bash, -lc, "set -euxo pipefail; rm -f /tmp/go.tar.gz"]
+
+final_message: "Go development environment is ready for user ${dev_username}."
