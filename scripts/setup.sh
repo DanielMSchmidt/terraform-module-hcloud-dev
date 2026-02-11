@@ -88,6 +88,12 @@ if [ -z "$SSH_KEY_PATH" ] || [ ! -f "$SSH_KEY_PATH" ]; then
 fi
 green "SSH key: $SSH_KEY_PATH"
 
+# ── Install Ansible Galaxy roles ───────────────────────────────
+
+echo
+echo "Installing Ansible Galaxy roles..."
+ansible-galaxy install -r "$PROJECT_DIR/ansible/requirements.yml" --force
+
 # ── Terraform init ─────────────────────────────────────────────
 
 echo

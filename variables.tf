@@ -22,9 +22,9 @@ variable "location" {
 }
 
 variable "server_type" {
-  description = "Hetzner Cloud server type (e.g. cpx21, cpx31, cpx41)."
+  description = "Hetzner Cloud server type (e.g. cpx22, cpx32, cpx42)."
   type        = string
-  default     = "cpx31"
+  default     = "cpx32"
 }
 
 variable "image" {

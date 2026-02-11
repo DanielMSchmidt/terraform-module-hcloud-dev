@@ -23,7 +23,10 @@ Powering off a Hetzner server doesn't save costs — you pay for the allocated r
 ## What you get
 
 - Ubuntu 24.04 server with dev tools (git, build-essential, ripgrep, fzf, tmux, etc.)
+- **Go** toolchain via [gantsign.golang](https://galaxy.ansible.com/gantsign/golang) (gopls, delve)
+- **Rust** toolchain via [hurricanehrndz.rustup](https://galaxy.ansible.com/hurricanehrndz/rustup) (cargo-watch, cargo-edit)
 - **Claude Code** and **OpenAI Codex** CLI pre-installed with API keys persisted on volume
+- **[skills.sh](https://skills.sh/)** agent skills installed globally for Claude Code
 - SSH agent forwarding for git operations with your local keys
 - SSH config auto-managed — just `ssh dev`
 - Zed remote development ready (Zed auto-installs its server component)
@@ -66,6 +69,14 @@ ssh dev
 # Work with AI agents
 claude           # Claude Code
 codex            # OpenAI Codex
+
+# Work with Go / Rust
+go version       # Go is ready
+cargo --version  # Rust is ready
+
+# Install additional agent skills on the server
+npx skills find              # search available skills
+npx skills add <repo> -g     # install globally
 
 # Connect with Zed: add "dev" as SSH remote in Zed
 
@@ -136,6 +147,30 @@ Override defaults via `TF_VAR_` environment variables or by editing the terrafor
 ## How API key persistence works
 
 API keys are written to the persistent volume at `~/work/.devenv/api-keys.sh` and sourced from `.bashrc` on login. Since the volume survives server destruction, you only need to set the keys once — they persist across server recreations. Running `up.sh` again will update them if your local `.env` has changed.
+
+## Ansible Galaxy roles
+
+The provisioning uses two community roles (installed automatically by `setup.sh`):
+
+| Role | What it installs |
+|------|-----------------|
+| [gantsign.golang](https://galaxy.ansible.com/gantsign/golang) | Go 1.24.2, gopls, delve |
+| [hurricanehrndz.rustup](https://galaxy.ansible.com/hurricanehrndz/rustup) | Rust stable via rustup, cargo-watch, cargo-edit |
+
+To customize versions or add cargo crates, edit `ansible/playbook.yml`.
+
+## Agent skills (skills.sh)
+
+[skills.sh](https://skills.sh/) is an open ecosystem of reusable AI agent capabilities by Vercel Labs. Skills are `SKILL.md` files that give agents procedural knowledge for specialized tasks.
+
+The server comes with the official Claude Code skills pre-installed globally. To manage skills on the server:
+
+```bash
+npx skills find                    # search available skills
+npx skills add <repo> -g           # install globally
+npx skills list                    # list installed skills
+npx skills update                  # update all skills
+```
 
 ## Security notes
 

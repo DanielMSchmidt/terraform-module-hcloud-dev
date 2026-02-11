@@ -102,6 +102,8 @@ anthropic_api_key: "${ANTHROPIC_API_KEY:-}"
 openai_api_key: "${OPENAI_API_KEY:-}"
 git_user_name: "$GIT_USER_NAME"
 git_user_email: "$GIT_USER_EMAIL"
+golang_version: "${GO_VERSION:-1.24.2}"
+rust_version: "${RUST_VERSION:-stable}"
 VARS
 
 ANSIBLE_CONFIG="$PROJECT_DIR/ansible/ansible.cfg" \

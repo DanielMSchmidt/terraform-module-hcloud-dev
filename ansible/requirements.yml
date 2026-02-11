@@ -1,0 +1,5 @@
+---
+roles:
+  - name: gantsign.golang
+    version: 3.5.0
+  - name: hurricanehrndz.rustup

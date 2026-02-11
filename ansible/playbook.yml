@@ -10,8 +10,11 @@
     openai_api_key: ""
     git_user_name: ""
     git_user_email: ""
+    golang_version: "1.24.2"
+    rust_version: "stable"
+    golang_gopath: "/home/{{ dev_user }}/go"
 
-  tasks:
+  pre_tasks:
     # ── Wait for system readiness ──────────────────────────────────
 
     - name: Wait for cloud-init to finish
@@ -54,6 +57,8 @@
           - ca-certificates
           - gnupg
           - software-properties-common
+          - pkg-config
+          - libssl-dev
         state: present
 
     # ── Mount persistent volume ────────────────────────────────────
@@ -87,7 +92,52 @@
         group: "{{ dev_user }}"
         state: directory
 
-    # ── Node.js (needed for Claude Code and Codex) ─────────────────
+  roles:
+    # ── Go toolchain ───────────────────────────────────────────────
+
+    - role: gantsign.golang
+      vars:
+        golang_gopath: "/home/{{ dev_user }}/go"
+
+    # ── Rust toolchain ─────────────────────────────────────────────
+
+    - role: hurricanehrndz.rustup
+      vars:
+        rustup_user: "{{ dev_user }}"
+        rustup_default_version: "{{ rust_version }}"
+        rustup_cargo_crates:
+          - cargo-watch
+          - cargo-edit
+
+  tasks:
+    # ── Go environment for dev user ────────────────────────────────
+
+    - name: Create GOPATH directories
+      file:
+        path: "/home/{{ dev_user }}/go/{{ item }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: "0755"
+      loop:
+        - bin
+        - src
+        - pkg
+
+    - name: Install Go dev tools
+      become_user: "{{ dev_user }}"
+      shell: |
+        export GOROOT={{ ansible_local.golang.general.home | default('/opt/go/' + golang_version) }}
+        export GOPATH=/home/{{ dev_user }}/go
+        export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+        go install {{ item }}
+      loop:
+        - golang.org/x/tools/gopls@latest
+        - github.com/go-delve/delve/cmd/dlv@latest
+      args:
+        creates: "/home/{{ dev_user }}/go/bin/{{ item | regex_replace('.*/(.*)@.*', '\\1') }}"
+
+    # ── Node.js (needed for Claude Code, Codex, and skills.sh) ────
 
     - name: Check if Node.js is installed
       command: node --version
@@ -114,6 +164,29 @@
         name: "@openai/codex"
         global: true
         state: present
+
+    # ── Skills.sh (agent skills ecosystem) ─────────────────────────
+
+    - name: Create global agent skills directories
+      file:
+        path: "/home/{{ dev_user }}/{{ item }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: "0755"
+      loop:
+        - .claude/skills
+        - .codex/skills
+
+    - name: Install agent skills globally
+      become_user: "{{ dev_user }}"
+      shell: |
+        npx -y skills add https://github.com/anthropics/claude-code/tree/main/.claude -g -a {{ item }} -y
+      loop:
+        - claude-code
+        - codex
+      environment:
+        HOME: "/home/{{ dev_user }}"
 
     # ── Environment configuration ──────────────────────────────────
 
@@ -145,6 +218,11 @@
           if [ -f "{{ work_dir }}/.devenv/api-keys.sh" ]; then
             source "{{ work_dir }}/.devenv/api-keys.sh"
           fi
+
+          # Go environment
+          export GOROOT={{ ansible_local.golang.general.home | default('/opt/go/' + golang_version) }}
+          export GOPATH=/home/{{ dev_user }}/go
+          export PATH=$GOROOT/bin:$GOPATH/bin:$HOME/.cargo/bin:$PATH
 
           # Default working directory
           export WORK_DIR="{{ work_dir }}"
