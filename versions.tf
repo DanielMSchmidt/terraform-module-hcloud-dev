@@ -8,3 +8,7 @@ terraform {
     }
   }
 }
+
+provider "hcloud" {
+  # Reads HCLOUD_TOKEN from environment automatically
+}

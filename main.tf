@@ -1,36 +1,23 @@
 locals {
-  ssh_public_key_resolved = trimspace(coalesce(var.ssh_public_key, file(pathexpand(var.ssh_public_key_path))))
-  ssh_host_alias_resolved = trimspace(var.ssh_host_alias)
-  ssh_private_key_path_resolved = var.ssh_private_key_path != null ? pathexpand(var.ssh_private_key_path) : (
-    var.ssh_public_key == null && endswith(pathexpand(var.ssh_public_key_path), ".pub")
-    ? trimsuffix(pathexpand(var.ssh_public_key_path), ".pub")
-    : null
-  )
-
-  common_labels = merge({
-    managed_by  = "terraform"
-    module      = "hcloud-dev"
-    environment = "development"
-  }, var.labels)
+  ssh_public_key       = trimspace(file(pathexpand(var.ssh_public_key_path)))
+  ssh_private_key_path = trimsuffix(pathexpand(var.ssh_public_key_path), ".pub")
 }
 
-resource "hcloud_ssh_key" "this" {
+# --- Persistent resources (survive server destruction) ---
+
+resource "hcloud_ssh_key" "dev" {
   name       = "${var.name}-ssh-key"
-  public_key = local.ssh_public_key_resolved
-  labels     = local.common_labels
+  public_key = local.ssh_public_key
 }
 
-resource "hcloud_firewall" "this" {
-  count = var.enable_firewall ? 1 : 0
-
-  name   = "${var.name}-fw"
-  labels = local.common_labels
+resource "hcloud_firewall" "dev" {
+  name = "${var.name}-fw"
 
   rule {
     direction  = "in"
     protocol   = "tcp"
     port       = "22"
-    source_ips = var.ssh_allowed_cidrs
+    source_ips = ["0.0.0.0/0", "::/0"]
   }
 
   rule {
@@ -54,31 +41,36 @@ resource "hcloud_firewall" "this" {
   }
 }
 
-resource "hcloud_server" "this" {
+resource "hcloud_volume" "dev" {
+  name     = "${var.name}-data"
+  location = var.location
+  size     = var.volume_size
+  format   = "ext4"
+}
+
+# --- Ephemeral resources (created/destroyed daily) ---
+
+resource "hcloud_server" "dev" {
+  count = var.server_active ? 1 : 0
+
   name        = var.name
   server_type = var.server_type
   image       = var.image
   location    = var.location
-  ssh_keys    = [hcloud_ssh_key.this.id]
-  labels      = local.common_labels
+  ssh_keys    = [hcloud_ssh_key.dev.id]
+
+  firewall_ids = [hcloud_firewall.dev.id]
 
   user_data = templatefile("${path.module}/templates/cloud-init.tftpl", {
     dev_username   = var.dev_username
-    go_version     = var.go_version
-    ssh_public_key = local.ssh_public_key_resolved
+    ssh_public_key = local.ssh_public_key
   })
-
-  firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
 }
 
-action "hcloud_server_poweron" "server" {
-    config {
-        server_id = hcloud_server.this.id
-    }
-}
+resource "hcloud_volume_attachment" "dev" {
+  count = var.server_active ? 1 : 0
 
-action "hcloud_server_poweroff" "server" {
-    config {
-        server_id = hcloud_server.this.id
-    }
+  volume_id = hcloud_volume.dev.id
+  server_id = hcloud_server.dev[0].id
+  automount = false
 }

@@ -1,0 +1,191 @@
+---
+- name: Provision dev server
+  hosts: all
+  become: true
+  vars:
+    dev_user: dev
+    work_dir: "/home/{{ dev_user }}/work"
+    volume_device: ""
+    anthropic_api_key: ""
+    openai_api_key: ""
+    git_user_name: ""
+    git_user_email: ""
+
+  tasks:
+    # ── Wait for system readiness ──────────────────────────────────
+
+    - name: Wait for cloud-init to finish
+      command: cloud-init status --wait
+      changed_when: false
+
+    - name: Wait for apt lock to be released
+      shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done
+      changed_when: false
+
+    # ── Base packages ──────────────────────────────────────────────
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install base development packages
+      apt:
+        name:
+          - git
+          - git-lfs
+          - build-essential
+          - curl
+          - wget
+          - unzip
+          - tar
+          - jq
+          - vim
+          - tmux
+          - ripgrep
+          - fd-find
+          - fzf
+          - direnv
+          - htop
+          - tree
+          - make
+          - gcc
+          - g++
+          - ca-certificates
+          - gnupg
+          - software-properties-common
+        state: present
+
+    # ── Mount persistent volume ────────────────────────────────────
+
+    - name: Wait for volume device to appear
+      wait_for:
+        path: "{{ volume_device }}"
+        state: present
+        timeout: 60
+      when: volume_device != ""
+
+    - name: Create work directory mount point
+      file:
+        path: "{{ work_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Mount persistent volume
+      mount:
+        path: "{{ work_dir }}"
+        src: "{{ volume_device }}"
+        fstype: ext4
+        state: mounted
+        opts: defaults,nofail
+      when: volume_device != ""
+
+    - name: Set work directory ownership
+      file:
+        path: "{{ work_dir }}"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        state: directory
+
+    # ── Node.js (needed for Claude Code and Codex) ─────────────────
+
+    - name: Check if Node.js is installed
+      command: node --version
+      register: node_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Node.js 22.x via NodeSource
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+        apt-get install -y nodejs
+      when: node_check.rc != 0
+
+    # ── AI Agent Tools ─────────────────────────────────────────────
+
+    - name: Install Claude Code CLI
+      npm:
+        name: "@anthropic-ai/claude-code"
+        global: true
+        state: present
+
+    - name: Install OpenAI Codex CLI
+      npm:
+        name: "@openai/codex"
+        global: true
+        state: present
+
+    # ── Environment configuration ──────────────────────────────────
+
+    - name: Create persistent env directory on volume
+      file:
+        path: "{{ work_dir }}/.devenv"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: "0700"
+
+    - name: Write API keys to persistent volume
+      copy:
+        content: |
+          # AI agent API keys — persisted on volume across server recreations
+          export ANTHROPIC_API_KEY="{{ anthropic_api_key }}"
+          export OPENAI_API_KEY="{{ openai_api_key }}"
+        dest: "{{ work_dir }}/.devenv/api-keys.sh"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: "0600"
+      when: anthropic_api_key != "" or openai_api_key != ""
+
+    - name: Configure dev user bashrc
+      blockinfile:
+        path: "/home/{{ dev_user }}/.bashrc"
+        block: |
+          # Load API keys from persistent volume
+          if [ -f "{{ work_dir }}/.devenv/api-keys.sh" ]; then
+            source "{{ work_dir }}/.devenv/api-keys.sh"
+          fi
+
+          # Default working directory
+          export WORK_DIR="{{ work_dir }}"
+          cd "{{ work_dir }}" 2>/dev/null || true
+        marker: "# {mark} MANAGED BY ANSIBLE — dev environment"
+
+    # ── Git configuration ──────────────────────────────────────────
+
+    - name: Configure git user name
+      become_user: "{{ dev_user }}"
+      community.general.git_config:
+        name: user.name
+        value: "{{ git_user_name }}"
+        scope: global
+      when: git_user_name != ""
+
+    - name: Configure git user email
+      become_user: "{{ dev_user }}"
+      community.general.git_config:
+        name: user.email
+        value: "{{ git_user_email }}"
+        scope: global
+      when: git_user_email != ""
+
+    - name: Configure git default branch
+      become_user: "{{ dev_user }}"
+      community.general.git_config:
+        name: init.defaultBranch
+        value: main
+        scope: global
+
+    - name: Configure git pull rebase
+      become_user: "{{ dev_user }}"
+      community.general.git_config:
+        name: pull.rebase
+        value: "true"
+        scope: global
+
+    - name: Configure git push autoSetupRemote
+      become_user: "{{ dev_user }}"
+      community.general.git_config:
+        name: push.autoSetupRemote
+        value: "true"
+        scope: global

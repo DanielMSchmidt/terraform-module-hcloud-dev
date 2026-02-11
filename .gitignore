@@ -9,4 +9,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 .terraform.lock.hcl
-terraform.dev.tfrc
+
+# Local environment (contains secrets)
+.env
+
+# Ansible retry files
+*.retry

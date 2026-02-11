@@ -1,7 +1,0 @@
-provider_installation {
-  dev_overrides {
-    "hetznercloud/hcloud" = "/Users/danielschmidt/work/terraform-provider-hcloud"
-  }
-
-  direct {}
-}

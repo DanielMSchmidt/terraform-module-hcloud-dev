@@ -1,132 +1,146 @@
-# terraform-module-hcloud-dev
+# hcloud-dev
 
-Terraform module for creating a Hetzner Cloud development server optimized for Go development, with SSH access using your local SSH key.
+Ephemeral Hetzner Cloud dev server with persistent storage, pre-configured for AI-assisted development (Claude Code, OpenAI Codex) and Zed remote editing.
 
-## Features
+## How it works
 
-- Creates a single Hetzner Cloud server for development
-- Registers your local SSH public key in Hetzner Cloud
-- Optionally creates and attaches a firewall (SSH on port 22)
-- Boots with cloud-init and installs a Go toolchain plus common development tools
-- Creates a non-root development user (default: `dev`)
-
-## Requirements
-
-- Terraform `>= 1.6.0`
-- Hetzner Cloud API token
-- Local SSH public key (default: `~/.ssh/id_ed25519.pub`)
-
-## Provider dev override (local provider build)
-
-To force Terraform to use your local provider build at `/Users/danielschmidt/work/terraform-provider-hcloud`, create a CLI config file (for example `terraform.dev.tfrc`):
-
-```hcl
-provider_installation {
-  dev_overrides {
-    "hetznercloud/hcloud" = "/Users/danielschmidt/work/terraform-provider-hcloud"
-  }
-
-  direct {}
-}
+```
+┌─────────────────────────────────────────────────┐
+│  Persistent (always exists)                     │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐ │
+│  │ SSH Key  │  │ Firewall │  │ Volume (50GB) │ │
+│  └──────────┘  └──────────┘  └───────────────┘ │
+├─────────────────────────────────────────────────┤
+│  Ephemeral (created/destroyed daily)            │
+│  ┌──────────────────────────────────────┐       │
+│  │ Server ──── Volume mounted at ~/work │       │
+│  └──────────────────────────────────────┘       │
+└─────────────────────────────────────────────────┘
 ```
 
-Then run Terraform with:
+Powering off a Hetzner server doesn't save costs — you pay for the allocated resources. Instead, this project **destroys the server** when you're done and recreates it the next morning. Your work directory lives on a persistent volume that survives server destruction.
+
+## What you get
+
+- Ubuntu 24.04 server with dev tools (git, build-essential, ripgrep, fzf, tmux, etc.)
+- **Claude Code** and **OpenAI Codex** CLI pre-installed with API keys persisted on volume
+- SSH agent forwarding for git operations with your local keys
+- SSH config auto-managed — just `ssh dev`
+- Zed remote development ready (Zed auto-installs its server component)
+- Git identity carried over from your local machine
+
+## Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.6.0
+- [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/) (`brew install ansible`)
+- Hetzner Cloud [API token](https://console.hetzner.cloud/)
+- SSH key pair (`~/.ssh/id_ed25519` or `~/.ssh/id_rsa`)
+
+## Quick start
 
 ```bash
-TF_CLI_CONFIG_FILE=$(pwd)/terraform.dev.tfrc terraform init
-TF_CLI_CONFIG_FILE=$(pwd)/terraform.dev.tfrc terraform plan
-TF_CLI_CONFIG_FILE=$(pwd)/terraform.dev.tfrc terraform apply
+# 1. Clone and enter the project
+git clone <this-repo>
+cd terraform-module-hcloud-dev
+
+# 2. One-time setup — creates .env, checks prerequisites, runs terraform init
+./scripts/setup.sh
+
+# 3. Fill in your API tokens in .env (setup.sh will prompt you)
+
+# 4. Create server and provision it
+./scripts/up.sh
 ```
 
-## Usage
-
-```hcl
-provider "hcloud" {
-  token = var.hcloud_token
-}
-
-module "go_dev" {
-  source = "../terraform-module-hcloud-dev"
-
-  name                = "go-dev"
-  location            = "fsn1"
-  server_type         = "cpx42"
-  image               = "ubuntu-24.04"
-  ssh_public_key_path = "~/.ssh/id_ed25519.pub"
-  ssh_host_alias      = "dev"
-
-  dev_username = "dev"
-  go_version   = "1.24.0"
-
-  # Best practice: restrict SSH to your own IP/CIDRs.
-  ssh_allowed_cidrs = ["203.0.113.10/32"]
-
-  labels = {
-    project = "golang-dev"
-    owner   = "daniel"
-  }
-}
-```
-
-## SSH Alias (`ssh dev`)
-
-Use the generated SSH config output:
+## Daily workflow
 
 ```bash
-mkdir -p ~/.ssh/config.d
-touch ~/.ssh/config
-grep -q '^Include ~/.ssh/config.d/\*$' ~/.ssh/config || echo 'Include ~/.ssh/config.d/*' >> ~/.ssh/config
-terraform output -raw ssh_config_entry > ~/.ssh/config.d/go-dev.conf
+# Morning — create server (~3-5 min)
+./scripts/up.sh
+
+# Connect via SSH
 ssh dev
+# or
+./scripts/ssh.sh
+
+# Work with AI agents
+claude           # Claude Code
+codex            # OpenAI Codex
+
+# Connect with Zed: add "dev" as SSH remote in Zed
+
+# Evening — destroy server, volume is preserved
+./scripts/down.sh
 ```
 
-To clone private repositories from the remote host without copying private keys:
+## Scripts
+
+| Script | What it does |
+|--------|-------------|
+| `./scripts/setup.sh` | One-time setup: checks prerequisites, creates `.env`, runs `terraform init` |
+| `./scripts/up.sh` | Creates server, attaches volume, provisions with Ansible, updates SSH config |
+| `./scripts/down.sh` | Destroys server (volume and data are preserved) |
+| `./scripts/ssh.sh` | SSH into the server with agent forwarding |
+| `./scripts/destroy-all.sh` | Destroys everything **including the volume** (data loss!) |
+
+## Configuration
+
+All configuration lives in `.env` (created from `.env.example` by `setup.sh`):
 
 ```bash
-ssh-add ~/.ssh/id_ed25519
-ssh -A dev
-ssh -T git@github.com
+# Required
+HCLOUD_TOKEN=your-hetzner-token
+
+# Recommended (for AI agents)
+ANTHROPIC_API_KEY=your-anthropic-key
+OPENAI_API_KEY=your-openai-key
+
+# Optional (auto-detected)
+# SSH_PUBLIC_KEY_PATH=~/.ssh/id_ed25519.pub
+# GIT_USER_NAME=Your Name
+# GIT_USER_EMAIL=your@email.com
 ```
 
-## Inputs
+Everything else is auto-detected:
+- **SSH key**: tries `~/.ssh/id_ed25519.pub`, then `~/.ssh/id_rsa.pub`
+- **Git identity**: reads from your local `git config --global`
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `name` | Name prefix for resources. | `string` | `"go-dev"` | no |
-| `location` | Hetzner Cloud location (`nbg1`, `fsn1`, `hel1`, `ash`, `hil`). | `string` | `"fsn1"` | no |
-| `server_type` | Hetzner Cloud server type. | `string` | `"cpx42"` | no |
-| `image` | Server image. | `string` | `"ubuntu-24.04"` | no |
-| `ssh_public_key` | SSH public key content; takes precedence over `ssh_public_key_path` if set. | `string` | `null` | no |
-| `ssh_public_key_path` | Path to local SSH public key used when `ssh_public_key` is null. | `string` | `"~/.ssh/id_ed25519.pub"` | no |
-| `ssh_private_key_path` | Path to private key used in generated SSH config output. If null, inferred from `ssh_public_key_path` when possible. | `string` | `null` | no |
-| `ssh_host_alias` | Host alias used in generated SSH config output. | `string` | `"dev"` | no |
-| `ssh_forward_agent` | Whether generated SSH config includes `ForwardAgent yes`. | `bool` | `true` | no |
-| `dev_username` | Non-root Linux user for development. | `string` | `"dev"` | no |
-| `go_version` | Go version installed from `go.dev`. | `string` | `"1.24.0"` | no |
-| `enable_firewall` | Whether to create and attach a firewall for the server. | `bool` | `true` | no |
-| `ssh_allowed_cidrs` | CIDR blocks allowed to access SSH (`TCP/22`). | `list(string)` | `["0.0.0.0/0", "::/0"]` | no |
-| `labels` | Additional labels for created resources. | `map(string)` | `{}` | no |
+## Zed remote development
 
-## Outputs
+After `./scripts/up.sh`, connect from Zed:
 
-| Name | Description |
-|------|-------------|
-| `server_id` | ID of the created Hetzner Cloud server. |
-| `server_name` | Name of the created server. |
-| `ipv4_address` | Public IPv4 address. |
-| `ipv6_address` | Public IPv6 network assigned to the server. |
-| `ssh_user` | Username for SSH access. |
-| `ssh_command` | Ready-to-use SSH command. |
-| `ssh_host_alias` | Host alias for SSH config usage. |
-| `ssh_config_entry` | SSH config block to write to `~/.ssh/config` or an include file. |
-| `firewall_id` | Firewall ID when enabled, otherwise `null`. |
+1. Open Zed
+2. Use "Connect to Server" (or add to settings):
+   ```json
+   "ssh_connections": [
+     { "host": "dev" }
+   ]
+   ```
+3. Zed will use your SSH config and auto-install its server component
 
-## Security notes / best practices
+## Terraform variables
 
-- Set `ssh_allowed_cidrs` to your fixed public IP(s) instead of allowing all addresses.
-- Prefer short-lived API tokens and keep them in environment variables.
-- Do not use provider `dev_overrides` in production workflows.
+Override defaults via `TF_VAR_` environment variables or by editing the terraform files:
 
-## Example
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `server_active` | `true` | Whether the server should exist |
+| `name` | `"dev"` | Resource name prefix |
+| `location` | `"nbg1"` | Hetzner datacenter |
+| `server_type` | `"cpx31"` | Server size (4 vCPU, 8 GB RAM) |
+| `image` | `"ubuntu-24.04"` | OS image |
+| `volume_size` | `50` | Persistent volume size in GB |
+| `ssh_public_key_path` | `"~/.ssh/id_ed25519.pub"` | SSH public key path |
+| `dev_username` | `"dev"` | Linux username |
 
-See `/examples/basic` for a runnable example configuration.
+## How API key persistence works
+
+API keys are written to the persistent volume at `~/work/.devenv/api-keys.sh` and sourced from `.bashrc` on login. Since the volume survives server destruction, you only need to set the keys once — they persist across server recreations. Running `up.sh` again will update them if your local `.env` has changed.
+
+## Security notes
+
+- The `.env` file contains secrets and is excluded from git via `.gitignore`
+- API keys are stored on the volume with `0600` permissions
+- SSH agent forwarding is enabled so your private keys never leave your machine
+- The firewall restricts inbound traffic to SSH only
+- Consider restricting SSH to your IP by editing the firewall rules in `main.tf`
