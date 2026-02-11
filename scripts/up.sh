@@ -44,6 +44,14 @@ SSH_PRIVATE_KEY="${SSH_KEY_PATH%.pub}"
 GIT_USER_NAME="${GIT_USER_NAME:-$(git config --global user.name 2>/dev/null || echo '')}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-$(git config --global user.email 2>/dev/null || echo '')}"
 
+# ── Ensure SSH agent has a key (needed for GitHub on the server) ─
+
+if ! ssh-add -l &>/dev/null; then
+  if [ -n "$SSH_PRIVATE_KEY" ] && [ -f "$SSH_PRIVATE_KEY" ]; then
+    ssh-add "$SSH_PRIVATE_KEY"
+  fi
+fi
+
 # ── Terraform apply ────────────────────────────────────────────
 
 echo "=== Creating dev server ==="
@@ -104,6 +112,7 @@ git_user_name: "$GIT_USER_NAME"
 git_user_email: "$GIT_USER_EMAIL"
 golang_version: "${GO_VERSION:-1.24.2}"
 rust_version: "${RUST_VERSION:-stable}"
+node_version: "${NODE_VERSION:-22.x}"
 VARS
 
 ANSIBLE_CONFIG="$PROJECT_DIR/ansible/ansible.cfg" \
@@ -128,6 +137,9 @@ if grep -q "### BEGIN $SSH_CONFIG_MARKER ###" "$SSH_CONFIG" 2>/dev/null; then
   mv "$tmp" "$SSH_CONFIG"
   chmod 600 "$SSH_CONFIG"
 fi
+
+# Ensure file ends with a newline before appending
+[ -s "$SSH_CONFIG" ] && [ -n "$(tail -c1 "$SSH_CONFIG")" ] && echo >> "$SSH_CONFIG"
 
 # Add new block
 cat >> "$SSH_CONFIG" << EOF

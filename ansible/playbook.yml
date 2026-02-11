@@ -3,267 +3,271 @@
   hosts: all
   become: true
   vars:
-    dev_user: dev
-    work_dir: "/home/{{ dev_user }}/work"
-    volume_device: ""
-    anthropic_api_key: ""
-    openai_api_key: ""
-    git_user_name: ""
-    git_user_email: ""
-    golang_version: "1.24.2"
-    rust_version: "stable"
-    golang_gopath: "/home/{{ dev_user }}/go"
+      dev_user: dev
+      work_dir: "/home/{{ dev_user }}/work"
+      volume_device: ""
+      anthropic_api_key: ""
+      openai_api_key: ""
+      git_user_name: ""
+      git_user_email: ""
+      golang_version: "1.24.2"
+      go_install_dir: "/usr/local/go"
+      rust_version: "stable"
+      node_version: "22.x"
+      golang_gopath: "/home/{{ dev_user }}/go"
 
   pre_tasks:
-    # ── Wait for system readiness ──────────────────────────────────
+      # ── Wait for system readiness ──────────────────────────────────
 
-    - name: Wait for cloud-init to finish
-      command: cloud-init status --wait
-      changed_when: false
+      - name: Wait for cloud-init to finish
+        command: cloud-init status --wait
+        changed_when: false
 
-    - name: Wait for apt lock to be released
-      shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done
-      changed_when: false
+      - name: Wait for apt lock to be released
+        shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done
+        changed_when: false
 
-    # ── Base packages ──────────────────────────────────────────────
+      # ── Base packages ──────────────────────────────────────────────
 
-    - name: Update apt cache
-      apt:
-        update_cache: true
-        cache_valid_time: 3600
+      - name: Update apt cache
+        apt:
+            update_cache: true
+            cache_valid_time: 3600
 
-    - name: Install base development packages
-      apt:
-        name:
-          - git
-          - git-lfs
-          - build-essential
-          - curl
-          - wget
-          - unzip
-          - tar
-          - jq
-          - vim
-          - tmux
-          - ripgrep
-          - fd-find
-          - fzf
-          - direnv
-          - htop
-          - tree
-          - make
-          - gcc
-          - g++
-          - ca-certificates
-          - gnupg
-          - software-properties-common
-          - pkg-config
-          - libssl-dev
-        state: present
+      - name: Install base development packages
+        apt:
+            name:
+                - git
+                - git-lfs
+                - build-essential
+                - curl
+                - wget
+                - unzip
+                - tar
+                - jq
+                - vim
+                - tmux
+                - ripgrep
+                - fd-find
+                - fzf
+                - direnv
+                - htop
+                - tree
+                - make
+                - gcc
+                - g++
+                - ca-certificates
+                - gnupg
+                - software-properties-common
+                - pkg-config
+                - libssl-dev
+            state: present
 
-    # ── Mount persistent volume ────────────────────────────────────
+      # ── Mount persistent volume ────────────────────────────────────
 
-    - name: Wait for volume device to appear
-      wait_for:
-        path: "{{ volume_device }}"
-        state: present
-        timeout: 60
-      when: volume_device != ""
+      - name: Wait for volume device to appear
+        wait_for:
+            path: "{{ volume_device }}"
+            state: present
+            timeout: 60
+        when: volume_device != ""
 
-    - name: Create work directory mount point
-      file:
-        path: "{{ work_dir }}"
-        state: directory
-        mode: "0755"
+      - name: Create work directory mount point
+        file:
+            path: "{{ work_dir }}"
+            state: directory
+            mode: "0755"
 
-    - name: Mount persistent volume
-      mount:
-        path: "{{ work_dir }}"
-        src: "{{ volume_device }}"
-        fstype: ext4
-        state: mounted
-        opts: defaults,nofail
-      when: volume_device != ""
+      - name: Mount persistent volume
+        mount:
+            path: "{{ work_dir }}"
+            src: "{{ volume_device }}"
+            fstype: ext4
+            state: mounted
+            opts: defaults,nofail
+        when: volume_device != ""
 
-    - name: Set work directory ownership
-      file:
-        path: "{{ work_dir }}"
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        state: directory
+      - name: Set work directory ownership
+        file:
+            path: "{{ work_dir }}"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            state: directory
 
   roles:
-    # ── Go toolchain ───────────────────────────────────────────────
+      # ── Go toolchain ───────────────────────────────────────────────
 
-    - role: gantsign.golang
-      vars:
-        golang_gopath: "/home/{{ dev_user }}/go"
+      - role: andrewrothstein.go
+        vars:
+            go_version: "{{ golang_version }}"
+            go_path: "{{ golang_gopath }}"
+            go_install_dir: "{{ go_install_dir }}"
 
-    # ── Rust toolchain ─────────────────────────────────────────────
+      # ── Rust toolchain ─────────────────────────────────────────────
 
-    - role: hurricanehrndz.rustup
-      vars:
-        rustup_user: "{{ dev_user }}"
-        rustup_default_version: "{{ rust_version }}"
-        rustup_cargo_crates:
-          - cargo-watch
-          - cargo-edit
+      - role: hurricanehrndz.rustup
+        vars:
+            rustup_user: "{{ dev_user }}"
+            rustup_default_version: "{{ rust_version }}"
+            rustup_cargo_crates:
+                - cargo-watch
+                - cargo-edit
 
   tasks:
-    # ── Go environment for dev user ────────────────────────────────
+      # ── Go environment for dev user ────────────────────────────────
 
-    - name: Create GOPATH directories
-      file:
-        path: "/home/{{ dev_user }}/go/{{ item }}"
-        state: directory
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: "0755"
-      loop:
-        - bin
-        - src
-        - pkg
+      - name: Create GOPATH directories
+        file:
+            path: "/home/{{ dev_user }}/go/{{ item }}"
+            state: directory
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0755"
+        loop:
+            - bin
+            - src
+            - pkg
 
-    - name: Install Go dev tools
-      become_user: "{{ dev_user }}"
-      shell: |
-        export GOROOT={{ ansible_local.golang.general.home | default('/opt/go/' + golang_version) }}
-        export GOPATH=/home/{{ dev_user }}/go
-        export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
-        go install {{ item }}
-      loop:
-        - golang.org/x/tools/gopls@latest
-        - github.com/go-delve/delve/cmd/dlv@latest
-      args:
-        creates: "/home/{{ dev_user }}/go/bin/{{ item | regex_replace('.*/(.*)@.*', '\\1') }}"
+      - name: Install Go dev tools
+        become_user: "{{ dev_user }}"
+        shell: |
+            export GOROOT={{ go_install_dir }}
+            export GOPATH=/home/{{ dev_user }}/go
+            export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+            go install {{ item }}
+        loop:
+            - golang.org/x/tools/gopls@latest
+            - github.com/go-delve/delve/cmd/dlv@latest
+        args:
+            creates: "/home/{{ dev_user }}/go/bin/{{ item | regex_replace('.*/(.*)@.*', '\\1') }}"
 
-    # ── Node.js (needed for Claude Code, Codex, and skills.sh) ────
+      # ── Node.js (needed for Claude Code, Codex, and skills.sh) ────
 
-    - name: Check if Node.js is installed
-      command: node --version
-      register: node_check
-      changed_when: false
-      failed_when: false
+      - name: Check if Node.js is installed
+        command: node --version
+        register: node_check
+        changed_when: false
+        failed_when: false
 
-    - name: Install Node.js 22.x via NodeSource
-      shell: |
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-        apt-get install -y nodejs
-      when: node_check.rc != 0
+      - name: Install Node.js {{ node_version | regex_replace('\..*', '') }} via NodeSource
+        shell: |
+            curl -fsSL https://deb.nodesource.com/setup_{{ node_version | regex_replace('\..*', '') }}.x | bash -
+            apt-get install -y nodejs
+        when: node_check.rc != 0
 
-    # ── AI Agent Tools ─────────────────────────────────────────────
+      # ── AI Agent Tools ─────────────────────────────────────────────
 
-    - name: Install Claude Code CLI
-      npm:
-        name: "@anthropic-ai/claude-code"
-        global: true
-        state: present
+      - name: Install Claude Code CLI
+        npm:
+            name: "@anthropic-ai/claude-code"
+            global: true
+            state: present
 
-    - name: Install OpenAI Codex CLI
-      npm:
-        name: "@openai/codex"
-        global: true
-        state: present
+      - name: Install OpenAI Codex CLI
+        npm:
+            name: "@openai/codex"
+            global: true
+            state: present
 
-    # ── Skills.sh (agent skills ecosystem) ─────────────────────────
+      # ── Skills.sh (agent skills ecosystem) ─────────────────────────
 
-    - name: Create global agent skills directories
-      file:
-        path: "/home/{{ dev_user }}/{{ item }}"
-        state: directory
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: "0755"
-      loop:
-        - .claude/skills
-        - .codex/skills
+      - name: Create global agent skills directories
+        file:
+            path: "/home/{{ dev_user }}/{{ item }}"
+            state: directory
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0755"
+        loop:
+            - .claude/skills
+            - .codex/skills
 
-    - name: Install agent skills globally
-      become_user: "{{ dev_user }}"
-      shell: |
-        npx -y skills add https://github.com/anthropics/claude-code/tree/main/.claude -g -a {{ item }} -y
-      loop:
-        - claude-code
-        - codex
-      environment:
-        HOME: "/home/{{ dev_user }}"
+      # - name: Install agent skills globally
+      #   become_user: "{{ dev_user }}"
+      #   shell: |
+      #       npx -y skills add https://github.com/anthropics/claude-code/tree/main/.claude -g -a {{ item }} -y
+      #   loop:
+      #       - claude-code
+      #       - codex
+      #   environment:
+      #       HOME: "/home/{{ dev_user }}"
 
-    # ── Environment configuration ──────────────────────────────────
+      # ── Environment configuration ──────────────────────────────────
 
-    - name: Create persistent env directory on volume
-      file:
-        path: "{{ work_dir }}/.devenv"
-        state: directory
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: "0700"
+      - name: Create persistent env directory on volume
+        file:
+            path: "{{ work_dir }}/.devenv"
+            state: directory
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0700"
 
-    - name: Write API keys to persistent volume
-      copy:
-        content: |
-          # AI agent API keys — persisted on volume across server recreations
-          export ANTHROPIC_API_KEY="{{ anthropic_api_key }}"
-          export OPENAI_API_KEY="{{ openai_api_key }}"
-        dest: "{{ work_dir }}/.devenv/api-keys.sh"
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: "0600"
-      when: anthropic_api_key != "" or openai_api_key != ""
+      - name: Write API keys to persistent volume
+        copy:
+            content: |
+                # AI agent API keys — persisted on volume across server recreations
+                export ANTHROPIC_API_KEY="{{ anthropic_api_key }}"
+                export OPENAI_API_KEY="{{ openai_api_key }}"
+            dest: "{{ work_dir }}/.devenv/api-keys.sh"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0600"
+        when: anthropic_api_key != "" or openai_api_key != ""
 
-    - name: Configure dev user bashrc
-      blockinfile:
-        path: "/home/{{ dev_user }}/.bashrc"
-        block: |
-          # Load API keys from persistent volume
-          if [ -f "{{ work_dir }}/.devenv/api-keys.sh" ]; then
-            source "{{ work_dir }}/.devenv/api-keys.sh"
-          fi
+      - name: Configure dev user bashrc
+        blockinfile:
+            path: "/home/{{ dev_user }}/.bashrc"
+            block: |
+                # Load API keys from persistent volume
+                if [ -f "{{ work_dir }}/.devenv/api-keys.sh" ]; then
+                  source "{{ work_dir }}/.devenv/api-keys.sh"
+                fi
 
-          # Go environment
-          export GOROOT={{ ansible_local.golang.general.home | default('/opt/go/' + golang_version) }}
-          export GOPATH=/home/{{ dev_user }}/go
-          export PATH=$GOROOT/bin:$GOPATH/bin:$HOME/.cargo/bin:$PATH
+                # Go environment
+                export GOROOT={{ go_install_dir }}
+                export GOPATH=/home/{{ dev_user }}/go
+                export PATH=$GOROOT/bin:$GOPATH/bin:$HOME/.cargo/bin:$PATH
 
-          # Default working directory
-          export WORK_DIR="{{ work_dir }}"
-          cd "{{ work_dir }}" 2>/dev/null || true
-        marker: "# {mark} MANAGED BY ANSIBLE — dev environment"
+                # Default working directory
+                export WORK_DIR="{{ work_dir }}"
+                cd "{{ work_dir }}" 2>/dev/null || true
+            marker: "# {mark} MANAGED BY ANSIBLE — dev environment"
 
-    # ── Git configuration ──────────────────────────────────────────
+      # ── Git configuration ──────────────────────────────────────────
 
-    - name: Configure git user name
-      become_user: "{{ dev_user }}"
-      community.general.git_config:
-        name: user.name
-        value: "{{ git_user_name }}"
-        scope: global
-      when: git_user_name != ""
+      - name: Configure git user name
+        become_user: "{{ dev_user }}"
+        community.general.git_config:
+            name: user.name
+            value: "{{ git_user_name }}"
+            scope: global
+        when: git_user_name != ""
 
-    - name: Configure git user email
-      become_user: "{{ dev_user }}"
-      community.general.git_config:
-        name: user.email
-        value: "{{ git_user_email }}"
-        scope: global
-      when: git_user_email != ""
+      - name: Configure git user email
+        become_user: "{{ dev_user }}"
+        community.general.git_config:
+            name: user.email
+            value: "{{ git_user_email }}"
+            scope: global
+        when: git_user_email != ""
 
-    - name: Configure git default branch
-      become_user: "{{ dev_user }}"
-      community.general.git_config:
-        name: init.defaultBranch
-        value: main
-        scope: global
+      - name: Configure git default branch
+        become_user: "{{ dev_user }}"
+        community.general.git_config:
+            name: init.defaultBranch
+            value: main
+            scope: global
 
-    - name: Configure git pull rebase
-      become_user: "{{ dev_user }}"
-      community.general.git_config:
-        name: pull.rebase
-        value: "true"
-        scope: global
+      - name: Configure git pull rebase
+        become_user: "{{ dev_user }}"
+        community.general.git_config:
+            name: pull.rebase
+            value: "true"
+            scope: global
 
-    - name: Configure git push autoSetupRemote
-      become_user: "{{ dev_user }}"
-      community.general.git_config:
-        name: push.autoSetupRemote
-        value: "true"
-        scope: global
+      - name: Configure git push autoSetupRemote
+        become_user: "{{ dev_user }}"
+        community.general.git_config:
+            name: push.autoSetupRemote
+            value: "true"
+            scope: global

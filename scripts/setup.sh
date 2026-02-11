@@ -61,6 +61,51 @@ fi
 
 source "$PROJECT_DIR/.env"
 
+# ── Default tool versions from local installs ───────────────────
+
+set_env_default() {
+  local key="$1"
+  local value="$2"
+  if [ -z "$value" ]; then
+    return
+  fi
+  if [ -z "${!key:-}" ]; then
+    printf -v "$key" '%s' "$value"
+    export "$key"
+  fi
+  if grep -q "^${key}=" "$PROJECT_DIR/.env"; then
+    if grep -q "^${key}=$" "$PROJECT_DIR/.env"; then
+      tmp=$(mktemp)
+      awk -v k="$key" -v v="$value" 'BEGIN{FS=OFS="="} $1==k{$0=k"="v} {print}' "$PROJECT_DIR/.env" > "$tmp"
+      mv "$tmp" "$PROJECT_DIR/.env"
+    fi
+  else
+    echo "${key}=${value}" >> "$PROJECT_DIR/.env"
+  fi
+}
+
+GO_VERSION_LOCAL=""
+if command -v go &>/dev/null; then
+  GO_VERSION_LOCAL=$(go version | awk '{print $3}' | sed 's/^go//')
+fi
+
+RUST_VERSION_LOCAL=""
+if command -v rustup &>/dev/null; then
+  RUST_VERSION_LOCAL=$(rustup show active-toolchain 2>/dev/null | awk '{print $1}' | sed -E 's/-[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_]+$//')
+fi
+if [ -z "$RUST_VERSION_LOCAL" ] && command -v rustc &>/dev/null; then
+  RUST_VERSION_LOCAL=$(rustc -Vv | awk '/^release:/ {print $2}')
+fi
+
+NODE_VERSION_LOCAL=""
+if command -v node &>/dev/null; then
+  NODE_VERSION_LOCAL=$(node -p "process.versions.node")
+fi
+
+set_env_default GO_VERSION "$GO_VERSION_LOCAL"
+set_env_default RUST_VERSION "$RUST_VERSION_LOCAL"
+set_env_default NODE_VERSION "$NODE_VERSION_LOCAL"
+
 if [ -z "${HCLOUD_TOKEN:-}" ]; then
   red "HCLOUD_TOKEN is not set in .env — this is required."
   exit 1
