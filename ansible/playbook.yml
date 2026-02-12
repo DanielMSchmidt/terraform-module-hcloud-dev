@@ -138,14 +138,17 @@
         until: go_result.finished
         retries: 60
         delay: 10
+        when: go_install is not skipped
 
       - name: Wait for Rust installation
+        become_user: "{{ dev_user }}"
         async_status:
             jid: "{{ rust_install.ansible_job_id }}"
         register: rust_result
         until: rust_result.finished
         retries: 60
         delay: 10
+        when: rust_install is not skipped
 
       - name: Wait for Node.js installation
         async_status:
@@ -154,6 +157,7 @@
         until: node_result.finished
         retries: 60
         delay: 10
+        when: node_install is not skipped
 
       # ── Parallel post-install tools ────────────────────────────────
       # Go dev tools, Rust crates, and npm packages install concurrently.
@@ -185,12 +189,22 @@
         poll: 0
         register: go_tools_install
 
-      - name: Install Rust crates (cargo-watch + cargo-edit)
+      - name: Install cargo-binstall
         become_user: "{{ dev_user }}"
         shell: |
             source /home/{{ dev_user }}/.cargo/env
-            cargo install cargo-watch cargo-edit
+            curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
         args:
+            executable: /bin/bash
+            creates: "/home/{{ dev_user }}/.cargo/bin/cargo-binstall"
+
+      - name: Install Rust crates (cargo-watch)
+        become_user: "{{ dev_user }}"
+        shell: |
+            source /home/{{ dev_user }}/.cargo/env
+            cargo binstall -y cargo-watch
+        args:
+            executable: /bin/bash
             creates: "/home/{{ dev_user }}/.cargo/bin/cargo-watch"
         async: 600
         poll: 0
@@ -205,20 +219,24 @@
       # ── Wait for all post-install tools ────────────────────────────
 
       - name: Wait for Go dev tools
+        become_user: "{{ dev_user }}"
         async_status:
             jid: "{{ go_tools_install.ansible_job_id }}"
         register: go_tools_result
         until: go_tools_result.finished
         retries: 60
         delay: 10
+        when: go_tools_install is not skipped
 
       - name: Wait for Rust crates
+        become_user: "{{ dev_user }}"
         async_status:
             jid: "{{ rust_crates_install.ansible_job_id }}"
         register: rust_crates_result
         until: rust_crates_result.finished
         retries: 60
         delay: 10
+        when: rust_crates_install is not skipped
 
       - name: Wait for AI agent tools
         async_status:
@@ -227,6 +245,7 @@
         until: npm_tools_result.finished
         retries: 60
         delay: 10
+        when: npm_tools_install is not skipped
 
       # ── Skills directories ────────────────────────────────────────
 
