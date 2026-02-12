@@ -10,3 +10,30 @@ users:
     lock_passwd: true
     ssh_authorized_keys:
       - ${jsonencode(ssh_public_key)}
+
+package_update: true
+packages:
+  - git
+  - git-lfs
+  - build-essential
+  - curl
+  - wget
+  - unzip
+  - tar
+  - jq
+  - vim
+  - tmux
+  - ripgrep
+  - fd-find
+  - fzf
+  - direnv
+  - htop
+  - tree
+  - make
+  - gcc
+  - g++
+  - ca-certificates
+  - gnupg
+  - software-properties-common
+  - pkg-config
+  - libssl-dev

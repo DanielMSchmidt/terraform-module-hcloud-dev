@@ -1,4 +1,4 @@
 ---
-roles:
-  - name: andrewrothstein.go
-  - name: hurricanehrndz.rustup
+# Galaxy roles removed — Go, Rust, and Node.js are now installed directly
+# via shell tasks with async parallelism for faster provisioning.
+collections: []

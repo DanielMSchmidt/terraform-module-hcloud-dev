@@ -18,6 +18,8 @@
 
   pre_tasks:
       # ── Wait for system readiness ──────────────────────────────────
+      # cloud-init installs apt packages during boot (see cloud-init.tftpl),
+      # so by the time this finishes, all base packages are already present.
 
       - name: Wait for cloud-init to finish
         command: cloud-init status --wait
@@ -27,14 +29,10 @@
         shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done
         changed_when: false
 
-      # ── Base packages ──────────────────────────────────────────────
+      # ── Ensure base packages (idempotent safety net) ──────────────
+      # cloud-init should have installed these already; this is a no-op fallback.
 
-      - name: Update apt cache
-        apt:
-            update_cache: true
-            cache_valid_time: 3600
-
-      - name: Install base development packages
+      - name: Ensure base development packages are present
         apt:
             name:
                 - git
@@ -62,6 +60,7 @@
                 - pkg-config
                 - libssl-dev
             state: present
+            update_cache: false
 
       # ── Mount persistent volume ────────────────────────────────────
 
@@ -94,27 +93,70 @@
             group: "{{ dev_user }}"
             state: directory
 
-  roles:
-      # ── Go toolchain ───────────────────────────────────────────────
-
-      - role: andrewrothstein.go
-        vars:
-            go_version: "{{ golang_version }}"
-            go_path: "{{ golang_gopath }}"
-            go_install_dir: "{{ go_install_dir }}"
-
-      # ── Rust toolchain ─────────────────────────────────────────────
-
-      - role: hurricanehrndz.rustup
-        vars:
-            rustup_user: "{{ dev_user }}"
-            rustup_default_version: "{{ rust_version }}"
-            rustup_cargo_crates:
-                - cargo-watch
-                - cargo-edit
-
   tasks:
-      # ── Go environment for dev user ────────────────────────────────
+      # ── Parallel language toolchain installation ───────────────────
+      # Go, Rust, and Node.js install concurrently using async.
+
+      - name: Install Go toolchain
+        shell: |
+            curl -fsSL "https://go.dev/dl/go{{ golang_version }}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+            rm -rf {{ go_install_dir }}
+            tar -C /usr/local -xzf /tmp/go.tar.gz
+            rm -f /tmp/go.tar.gz
+        args:
+            creates: "{{ go_install_dir }}/bin/go"
+        async: 600
+        poll: 0
+        register: go_install
+
+      - name: Install Rust toolchain
+        become_user: "{{ dev_user }}"
+        shell: |
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain {{ rust_version }}
+        args:
+            creates: "/home/{{ dev_user }}/.cargo/bin/rustup"
+        async: 600
+        poll: 0
+        register: rust_install
+
+      - name: Install Node.js via NodeSource
+        shell: |
+            curl -fsSL https://deb.nodesource.com/setup_{{ node_version | regex_replace('\..*', '') }}.x | bash -
+            apt-get install -y nodejs
+        args:
+            creates: /usr/bin/node
+        async: 600
+        poll: 0
+        register: node_install
+
+      # ── Wait for all toolchains ────────────────────────────────────
+
+      - name: Wait for Go installation
+        async_status:
+            jid: "{{ go_install.ansible_job_id }}"
+        register: go_result
+        until: go_result.finished
+        retries: 60
+        delay: 10
+
+      - name: Wait for Rust installation
+        async_status:
+            jid: "{{ rust_install.ansible_job_id }}"
+        register: rust_result
+        until: rust_result.finished
+        retries: 60
+        delay: 10
+
+      - name: Wait for Node.js installation
+        async_status:
+            jid: "{{ node_install.ansible_job_id }}"
+        register: node_result
+        until: node_result.finished
+        retries: 60
+        delay: 10
+
+      # ── Parallel post-install tools ────────────────────────────────
+      # Go dev tools, Rust crates, and npm packages install concurrently.
 
       - name: Create GOPATH directories
         file:
@@ -128,48 +170,65 @@
             - src
             - pkg
 
-      - name: Install Go dev tools
+      - name: Install Go dev tools (gopls + delve)
         become_user: "{{ dev_user }}"
         shell: |
             export GOROOT={{ go_install_dir }}
             export GOPATH=/home/{{ dev_user }}/go
             export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
-            go install {{ item }}
-        loop:
-            - golang.org/x/tools/gopls@latest
-            - github.com/go-delve/delve/cmd/dlv@latest
+            go install golang.org/x/tools/gopls@latest &
+            go install github.com/go-delve/delve/cmd/dlv@latest &
+            wait
         args:
-            creates: "/home/{{ dev_user }}/go/bin/{{ item | regex_replace('.*/(.*)@.*', '\\1') }}"
+            creates: "/home/{{ dev_user }}/go/bin/gopls"
+        async: 600
+        poll: 0
+        register: go_tools_install
 
-      # ── Node.js (needed for Claude Code, Codex, and skills.sh) ────
-
-      - name: Check if Node.js is installed
-        command: node --version
-        register: node_check
-        changed_when: false
-        failed_when: false
-
-      - name: Install Node.js {{ node_version | regex_replace('\..*', '') }} via NodeSource
+      - name: Install Rust crates (cargo-watch + cargo-edit)
+        become_user: "{{ dev_user }}"
         shell: |
-            curl -fsSL https://deb.nodesource.com/setup_{{ node_version | regex_replace('\..*', '') }}.x | bash -
-            apt-get install -y nodejs
-        when: node_check.rc != 0
+            source /home/{{ dev_user }}/.cargo/env
+            cargo install cargo-watch cargo-edit
+        args:
+            creates: "/home/{{ dev_user }}/.cargo/bin/cargo-watch"
+        async: 600
+        poll: 0
+        register: rust_crates_install
 
-      # ── AI Agent Tools ─────────────────────────────────────────────
+      - name: Install AI agent tools (Claude Code + Codex)
+        shell: npm install -g @anthropic-ai/claude-code @openai/codex
+        async: 600
+        poll: 0
+        register: npm_tools_install
 
-      - name: Install Claude Code CLI
-        npm:
-            name: "@anthropic-ai/claude-code"
-            global: true
-            state: present
+      # ── Wait for all post-install tools ────────────────────────────
 
-      - name: Install OpenAI Codex CLI
-        npm:
-            name: "@openai/codex"
-            global: true
-            state: present
+      - name: Wait for Go dev tools
+        async_status:
+            jid: "{{ go_tools_install.ansible_job_id }}"
+        register: go_tools_result
+        until: go_tools_result.finished
+        retries: 60
+        delay: 10
 
-      # ── Skills.sh (agent skills ecosystem) ─────────────────────────
+      - name: Wait for Rust crates
+        async_status:
+            jid: "{{ rust_crates_install.ansible_job_id }}"
+        register: rust_crates_result
+        until: rust_crates_result.finished
+        retries: 60
+        delay: 10
+
+      - name: Wait for AI agent tools
+        async_status:
+            jid: "{{ npm_tools_install.ansible_job_id }}"
+        register: npm_tools_result
+        until: npm_tools_result.finished
+        retries: 60
+        delay: 10
+
+      # ── Skills directories ────────────────────────────────────────
 
       - name: Create global agent skills directories
         file:
@@ -181,16 +240,6 @@
         loop:
             - .claude/skills
             - .codex/skills
-
-      # - name: Install agent skills globally
-      #   become_user: "{{ dev_user }}"
-      #   shell: |
-      #       npx -y skills add https://github.com/anthropics/claude-code/tree/main/.claude -g -a {{ item }} -y
-      #   loop:
-      #       - claude-code
-      #       - codex
-      #   environment:
-      #       HOME: "/home/{{ dev_user }}"
 
       # ── Environment configuration ──────────────────────────────────
 
@@ -233,41 +282,18 @@
                 cd "{{ work_dir }}" 2>/dev/null || true
             marker: "# {mark} MANAGED BY ANSIBLE — dev environment"
 
-      # ── Git configuration ──────────────────────────────────────────
+      # ── Git configuration (single task instead of 5 round-trips) ──
 
-      - name: Configure git user name
+      - name: Configure git settings
         become_user: "{{ dev_user }}"
-        community.general.git_config:
-            name: user.name
-            value: "{{ git_user_name }}"
-            scope: global
-        when: git_user_name != ""
-
-      - name: Configure git user email
-        become_user: "{{ dev_user }}"
-        community.general.git_config:
-            name: user.email
-            value: "{{ git_user_email }}"
-            scope: global
-        when: git_user_email != ""
-
-      - name: Configure git default branch
-        become_user: "{{ dev_user }}"
-        community.general.git_config:
-            name: init.defaultBranch
-            value: main
-            scope: global
-
-      - name: Configure git pull rebase
-        become_user: "{{ dev_user }}"
-        community.general.git_config:
-            name: pull.rebase
-            value: "true"
-            scope: global
-
-      - name: Configure git push autoSetupRemote
-        become_user: "{{ dev_user }}"
-        community.general.git_config:
-            name: push.autoSetupRemote
-            value: "true"
-            scope: global
+        shell: |
+            {% if git_user_name != "" %}
+            git config --global user.name "{{ git_user_name }}"
+            {% endif %}
+            {% if git_user_email != "" %}
+            git config --global user.email "{{ git_user_email }}"
+            {% endif %}
+            git config --global init.defaultBranch main
+            git config --global pull.rebase true
+            git config --global push.autoSetupRemote true
+        changed_when: true

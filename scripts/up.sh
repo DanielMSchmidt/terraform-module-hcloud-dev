@@ -52,6 +52,78 @@ if ! ssh-add -l &>/dev/null; then
   fi
 fi
 
+# ── Select server type ────────────────────────────────────────
+
+select_server_type() {
+  if ! command -v jq &>/dev/null; then
+    red "jq is required for server type selection. Install with: brew install jq"
+    exit 1
+  fi
+
+  local location="${TF_VAR_location:-nbg1}"
+  local response
+  response=$(curl -sf -H "Authorization: Bearer $HCLOUD_TOKEN" \
+    "https://api.hetzner.cloud/v1/server_types?per_page=50") || {
+    red "Failed to fetch server types from Hetzner API."
+    exit 1
+  }
+
+  local options
+  options=$(echo "$response" | jq -r --arg loc "$location" '
+    [
+      .server_types[]
+      | select(.name | test("^(cpx|ccx)[0-9]"))
+      | . as $st
+      | ($st.prices[] | select(.location == $loc)) as $price
+      | {
+          name: $st.name,
+          cores: $st.cores,
+          memory: ($st.memory | tonumber | floor),
+          disk: $st.disk,
+          price: ($price.price_hourly.net | tonumber)
+        }
+    ]
+    | sort_by(.price)[]
+    | "\(.name)\t\(.cores) vCPU\t\(.memory) GB RAM\t\(.disk) GB disk\t€\(.price)/h"
+  ' | column -t -s$'\t')
+
+  if [ -z "$options" ]; then
+    red "No matching server types found for location $location."
+    exit 1
+  fi
+
+  local last_type_file="$PROJECT_DIR/.last_server_type"
+  local fzf_opts=(
+    --prompt="Select server type: "
+    --header="NAME       CPU       RAM          DISK          PRICE"
+    --height=~20 --reverse
+  )
+
+  if [ -f "$last_type_file" ]; then
+    local last_type
+    last_type=$(cat "$last_type_file")
+    fzf_opts+=(--query "$last_type" --select-1)
+  fi
+
+  local selected
+  selected=$(echo "$options" | fzf "${fzf_opts[@]}") || {
+    red "No server type selected."
+    exit 1
+  }
+
+  local name
+  name=$(echo "$selected" | awk '{print $1}')
+  echo "$name" > "$last_type_file"
+  echo "$name"
+}
+
+if [ -t 0 ]; then
+  SERVER_TYPE=$(select_server_type)
+  green "Selected: $SERVER_TYPE"
+else
+  SERVER_TYPE="${TF_VAR_server_type:-cpx22}"
+fi
+
 # ── Terraform apply ────────────────────────────────────────────
 
 echo "=== Creating dev server ==="
@@ -64,7 +136,7 @@ if [ ! -d .terraform ]; then
   terraform init -input=false
 fi
 
-terraform apply -var="server_active=true" -auto-approve
+terraform apply -var="server_active=true" -var="server_type=$SERVER_TYPE" -auto-approve
 
 # ── Read outputs ───────────────────────────────────────────────
 
@@ -91,7 +163,7 @@ while ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     red "Timed out waiting for SSH (5 minutes). Server may still be booting."
     exit 1
   fi
-  sleep 5
+  sleep 2
 done
 green "SSH is ready."
 
