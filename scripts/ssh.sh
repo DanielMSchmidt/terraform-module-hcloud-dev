@@ -28,23 +28,22 @@ fi
 SERVER_IP=$(terraform output -raw ipv4_address)
 DEV_USER=$(terraform output -raw ssh_user)
 
-# ── Ensure SSH agent has a key (needed for GitHub on the server) ─
+# ── Ensure SSH agent has our key (needed for GitHub on the server) ─
 
-if ! ssh-add -l &>/dev/null; then
-  SSH_KEY_PATH="${SSH_PUBLIC_KEY_PATH:-}"
-  if [ -z "$SSH_KEY_PATH" ]; then
-    for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa; do
-      if [ -f "$key" ]; then
-        SSH_KEY_PATH="$key"
-        break
-      fi
-    done
-  else
-    SSH_KEY_PATH="${SSH_KEY_PATH%.pub}"
-  fi
-  if [ -n "$SSH_KEY_PATH" ]; then
-    ssh-add "$SSH_KEY_PATH"
-  fi
+SSH_KEY_PATH="${SSH_PUBLIC_KEY_PATH:-}"
+if [ -z "$SSH_KEY_PATH" ]; then
+  for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa; do
+    if [ -f "$key" ]; then
+      SSH_KEY_PATH="$key"
+      break
+    fi
+  done
+else
+  SSH_KEY_PATH="${SSH_KEY_PATH%.pub}"
+fi
+
+if [ -n "$SSH_KEY_PATH" ] && [ -f "$SSH_KEY_PATH" ]; then
+  ssh-add -q "$SSH_KEY_PATH" 2>/dev/null || true
 fi
 
 # ── Connect ────────────────────────────────────────────────────

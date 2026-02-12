@@ -27,3 +27,14 @@ output "server_status" {
   description = "Whether the server is currently active."
   value       = var.server_active ? "running" : "destroyed"
 }
+
+output "github_ssh_private_key" {
+  description = "Private key for GitHub access on the server."
+  value       = tls_private_key.github.private_key_openssh
+  sensitive   = true
+}
+
+output "github_ssh_public_key" {
+  description = "Public key registered with GitHub."
+  value       = tls_private_key.github.public_key_openssh
+}

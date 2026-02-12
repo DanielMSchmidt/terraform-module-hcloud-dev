@@ -50,6 +50,13 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
+variable "github_token" {
+  description = "GitHub personal access token for registering the server SSH key. Leave empty to skip."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "dev_username" {
   description = "Non-root Linux user for development."
   type        = string

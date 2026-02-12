@@ -15,6 +15,8 @@
       rust_version: "stable"
       node_version: "22.x"
       golang_gopath: "/home/{{ dev_user }}/go"
+      github_ssh_private_key_file: ""
+      github_ssh_public_key_file: ""
 
   pre_tasks:
       # ── Wait for system readiness ──────────────────────────────────
@@ -260,7 +262,7 @@
             - .claude/skills
             - .codex/skills
 
-      # ── Environment configuration ──────────────────────────────────
+      # ── SSH key for GitHub (from Terraform) ──────────────────────
 
       - name: Create persistent env directory on volume
         file:
@@ -269,6 +271,39 @@
             owner: "{{ dev_user }}"
             group: "{{ dev_user }}"
             mode: "0700"
+
+      - name: Deploy GitHub SSH private key
+        copy:
+            src: "{{ github_ssh_private_key_file }}"
+            dest: "/home/{{ dev_user }}/.ssh/github_ed25519"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0600"
+        when: github_ssh_private_key_file != ""
+
+      - name: Deploy GitHub SSH public key
+        copy:
+            src: "{{ github_ssh_public_key_file }}"
+            dest: "/home/{{ dev_user }}/.ssh/github_ed25519.pub"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0644"
+        when: github_ssh_public_key_file != ""
+
+      - name: Configure SSH to use GitHub key
+        become_user: "{{ dev_user }}"
+        blockinfile:
+            path: "/home/{{ dev_user }}/.ssh/config"
+            create: true
+            mode: "0600"
+            block: |
+                Host github.com
+                    IdentityFile ~/.ssh/github_ed25519
+                    IdentitiesOnly yes
+            marker: "# {mark} MANAGED BY ANSIBLE — github"
+        when: github_ssh_private_key_file != ""
+
+      # ── Environment configuration ──────────────────────────────────
 
       - name: Write API keys to persistent volume
         copy:
@@ -315,4 +350,5 @@
             git config --global init.defaultBranch main
             git config --global pull.rebase true
             git config --global push.autoSetupRemote true
+            git config --global url."git@github.com:".insteadOf "https://github.com/"
         changed_when: true

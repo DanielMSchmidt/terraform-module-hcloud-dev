@@ -130,6 +130,7 @@ echo "=== Creating dev server ==="
 cd "$PROJECT_DIR"
 export HCLOUD_TOKEN
 export TF_VAR_ssh_public_key_path="$SSH_KEY_PATH"
+export TF_VAR_github_token="${GITHUB_TOKEN:-}"
 
 # Initialize if needed
 if [ ! -d .terraform ]; then
@@ -172,9 +173,17 @@ green "SSH is ready."
 echo
 echo "=== Provisioning with Ansible ==="
 
+# Get GitHub SSH keys from Terraform (if configured)
+GITHUB_KEY_DIR=$(mktemp -d)
+GITHUB_SSH_KEY_ARGS=""
+if terraform output -raw github_ssh_private_key > "$GITHUB_KEY_DIR/private" 2>/dev/null && [ -s "$GITHUB_KEY_DIR/private" ]; then
+  terraform output -raw github_ssh_public_key > "$GITHUB_KEY_DIR/public" 2>/dev/null
+  GITHUB_SSH_KEY_ARGS="-e github_ssh_private_key_file=$GITHUB_KEY_DIR/private -e github_ssh_public_key_file=$GITHUB_KEY_DIR/public"
+fi
+
 # Write Ansible vars to temp file (handles spaces in values safely)
 ANSIBLE_VARS_FILE=$(mktemp)
-trap "rm -f $ANSIBLE_VARS_FILE" EXIT
+trap "rm -f $ANSIBLE_VARS_FILE; rm -rf $GITHUB_KEY_DIR" EXIT
 cat > "$ANSIBLE_VARS_FILE" << VARS
 dev_user: "$DEV_USER"
 volume_device: "$VOLUME_DEVICE"
@@ -192,7 +201,8 @@ ansible-playbook "$PROJECT_DIR/ansible/playbook.yml" \
   -i "$SERVER_IP," \
   -u "$DEV_USER" \
   --private-key "$SSH_PRIVATE_KEY" \
-  -e "@$ANSIBLE_VARS_FILE"
+  -e "@$ANSIBLE_VARS_FILE" \
+  $GITHUB_SSH_KEY_ARGS
 
 # ── Update SSH config ──────────────────────────────────────────
 
@@ -213,13 +223,19 @@ fi
 # Ensure file ends with a newline before appending
 [ -s "$SSH_CONFIG" ] && [ -n "$(tail -c1 "$SSH_CONFIG")" ] && echo >> "$SSH_CONFIG"
 
-# Add new block
+# Add new block (UseKeychain is macOS-only, ignored on Linux)
+USE_KEYCHAIN=""
+if [[ "$(uname)" == "Darwin" ]]; then
+  USE_KEYCHAIN=$'\n    UseKeychain yes'
+fi
+
 cat >> "$SSH_CONFIG" << EOF
 ### BEGIN $SSH_CONFIG_MARKER ###
 Host dev
     HostName $SERVER_IP
     User $DEV_USER
     IdentityFile $SSH_PRIVATE_KEY
+    AddKeysToAgent yes${USE_KEYCHAIN}
     ForwardAgent yes
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null

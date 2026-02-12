@@ -48,6 +48,19 @@ resource "hcloud_volume" "dev" {
   format   = "ext4"
 }
 
+# --- GitHub SSH key (managed by Terraform) ---
+
+resource "tls_private_key" "github" {
+  algorithm = "ED25519"
+}
+
+resource "github_user_ssh_key" "dev" {
+  count = var.github_token != "" ? 1 : 0
+
+  title = "${var.name}-server"
+  key   = tls_private_key.github.public_key_openssh
+}
+
 # --- Ephemeral resources (created/destroyed daily) ---
 
 resource "hcloud_server" "dev" {

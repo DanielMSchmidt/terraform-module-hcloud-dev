@@ -114,6 +114,7 @@ fi
 green "HCLOUD_TOKEN is set."
 [ -n "${ANTHROPIC_API_KEY:-}" ] && green "ANTHROPIC_API_KEY is set." || yellow "ANTHROPIC_API_KEY is not set (Claude Code won't be authenticated)."
 [ -n "${OPENAI_API_KEY:-}" ]    && green "OPENAI_API_KEY is set."    || yellow "OPENAI_API_KEY is not set (Codex won't be authenticated)."
+[ -n "${GITHUB_TOKEN:-}" ]      && green "GITHUB_TOKEN is set."      || yellow "GITHUB_TOKEN is not set (git push from server won't work)."
 
 # ── Auto-detect SSH key ────────────────────────────────────────
 
