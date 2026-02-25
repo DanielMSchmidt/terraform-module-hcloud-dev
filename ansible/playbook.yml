@@ -17,6 +17,7 @@
       golang_gopath: "/home/{{ dev_user }}/go"
       github_ssh_private_key_file: ""
       github_ssh_public_key_file: ""
+      dotfiles_repo: ""
 
   pre_tasks:
       # ── Wait for system readiness ──────────────────────────────────
@@ -61,6 +62,7 @@
                 - software-properties-common
                 - pkg-config
                 - libssl-dev
+                - fish
             state: present
             update_cache: false
 
@@ -305,13 +307,25 @@
 
       # ── Environment configuration ──────────────────────────────────
 
-      - name: Write API keys to persistent volume
+      - name: Write API keys to persistent volume (bash format)
         copy:
             content: |
                 # AI agent API keys — persisted on volume across server recreations
                 export ANTHROPIC_API_KEY="{{ anthropic_api_key }}"
                 export OPENAI_API_KEY="{{ openai_api_key }}"
             dest: "{{ work_dir }}/.devenv/api-keys.sh"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0600"
+        when: anthropic_api_key != "" or openai_api_key != ""
+
+      - name: Write API keys to persistent volume (fish format)
+        copy:
+            content: |
+                # AI agent API keys — persisted on volume across server recreations
+                set -gx ANTHROPIC_API_KEY "{{ anthropic_api_key }}"
+                set -gx OPENAI_API_KEY "{{ openai_api_key }}"
+            dest: "{{ work_dir }}/.devenv/api-keys.fish"
             owner: "{{ dev_user }}"
             group: "{{ dev_user }}"
             mode: "0600"
@@ -336,6 +350,90 @@
                 cd "{{ work_dir }}" 2>/dev/null || true
             marker: "# {mark} MANAGED BY ANSIBLE — dev environment"
 
+      # ── Fish shell environment ───────────────────────────────────
+
+      - name: Create fish conf.d directory
+        file:
+            path: "/home/{{ dev_user }}/.config/fish/conf.d"
+            state: directory
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0755"
+
+      - name: Write fish server environment config
+        copy:
+            content: |
+                # Server environment — managed by Ansible
+                set -gx GOROOT {{ go_install_dir }}
+                set -gx GOPATH /home/{{ dev_user }}/go
+                set -gx WORK_DIR "{{ work_dir }}"
+                fish_add_path $GOROOT/bin $GOPATH/bin $HOME/.cargo/bin $HOME/.local/bin /usr/local/bin
+
+                # Auto-cd to work directory
+                if status is-interactive; and test (pwd) = $HOME
+                    cd "{{ work_dir }}" 2>/dev/null; or true
+                end
+            dest: "/home/{{ dev_user }}/.config/fish/conf.d/server-env.fish"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0644"
+
+      - name: Write fish API keys loader
+        copy:
+            content: |
+                # Load API keys from persistent volume — managed by Ansible
+                if test -f "{{ work_dir }}/.devenv/api-keys.fish"
+                    source "{{ work_dir }}/.devenv/api-keys.fish"
+                end
+            dest: "/home/{{ dev_user }}/.config/fish/conf.d/server-api-keys.fish"
+            owner: "{{ dev_user }}"
+            group: "{{ dev_user }}"
+            mode: "0644"
+
+      # ── Fish shell + chezmoi setup ───────────────────────────────
+
+      - name: Change dev user shell to fish
+        user:
+            name: "{{ dev_user }}"
+            shell: /usr/bin/fish
+        when: dotfiles_repo != ""
+
+      - name: Install chezmoi
+        shell: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
+        args:
+            creates: /usr/local/bin/chezmoi
+        when: dotfiles_repo != ""
+
+      - name: Create chezmoi config directory
+        become_user: "{{ dev_user }}"
+        file:
+            path: "/home/{{ dev_user }}/.config/chezmoi"
+            state: directory
+            mode: "0755"
+        when: dotfiles_repo != ""
+
+      - name: Write chezmoi config (skip interactive prompts)
+        become_user: "{{ dev_user }}"
+        copy:
+            content: |
+                [data]
+                    isWorkComputer = false
+            dest: "/home/{{ dev_user }}/.config/chezmoi/chezmoi.toml"
+            mode: "0644"
+            force: false
+        when: dotfiles_repo != ""
+
+      - name: Apply chezmoi dotfiles
+        become_user: "{{ dev_user }}"
+        shell: chezmoi init --apply "{{ dotfiles_repo }}"
+        args:
+            creates: "/home/{{ dev_user }}/.local/share/chezmoi"
+        environment:
+            PATH: "/usr/local/bin:/usr/bin:/bin"
+        when: dotfiles_repo != ""
+        register: chezmoi_result
+        failed_when: chezmoi_result.rc != 0 and 'already' not in chezmoi_result.stderr
+
       # ── Git configuration (single task instead of 5 round-trips) ──
 
       - name: Configure git settings
@@ -352,3 +450,4 @@
             git config --global push.autoSetupRemote true
             git config --global url."git@github.com:".insteadOf "https://github.com/"
         changed_when: true
+        when: dotfiles_repo == ""

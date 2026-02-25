@@ -57,6 +57,12 @@ variable "github_token" {
   sensitive   = true
 }
 
+variable "dotfiles_repo" {
+  description = "Chezmoi dotfiles repo (e.g. 'danielmschmidt/dotfiles'). When set, installs fish + chezmoi and applies dotfiles on the server."
+  type        = string
+  default     = ""
+}
+
 variable "dev_username" {
   description = "Non-root Linux user for development."
   type        = string

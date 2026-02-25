@@ -194,6 +194,7 @@ git_user_email: "$GIT_USER_EMAIL"
 golang_version: "${GO_VERSION:-1.24.2}"
 rust_version: "${RUST_VERSION:-stable}"
 node_version: "${NODE_VERSION:-22.x}"
+dotfiles_repo: "${DOTFILES_REPO:-}"
 VARS
 
 ANSIBLE_CONFIG="$PROJECT_DIR/ansible/ansible.cfg" \

@@ -4,7 +4,7 @@ users:
   - default
   - name: ${dev_username}
     gecos: Dev User
-    shell: /bin/bash
+    shell: /usr/bin/fish
     groups: [sudo]
     sudo: ALL=(ALL) NOPASSWD:ALL
     lock_passwd: true
@@ -37,3 +37,4 @@ packages:
   - software-properties-common
   - pkg-config
   - libssl-dev
+  - fish
