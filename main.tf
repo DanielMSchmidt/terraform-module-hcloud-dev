@@ -1,5 +1,6 @@
 locals {
-  ssh_public_key       = trimspace(file(pathexpand(var.ssh_public_key_path)))
+  # Allow destroy to proceed even if the local key file has been removed.
+  ssh_public_key       = trimspace(try(file(pathexpand(var.ssh_public_key_path)), ""))
   ssh_private_key_path = trimsuffix(pathexpand(var.ssh_public_key_path), ".pub")
 }
 
